@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Juego de Memoria</title>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:400,700&display=swap" rel="stylesheet">
+  <style>
+    /* Reset básico */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #a1c4fd, #c2e9fb);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px;
+      min-height: 100vh;
+    }
+    .container {
+      width: 100%;
+      max-width: 900px;
+      background: #fff;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin-bottom: 8px;
+      color: #333;
+      font-size: 1.8rem;
+    }
+    .stats {
+      display: flex;
+      justify-content: space-around;
+      margin: 10px 0;
+      font-size: 1rem;
+    }
+    button {
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 5px;
+      background-color: #1e3a8a;
+      color: #fff;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #162f6f;
+    }
+    select, label {
+      font-size: 0.9rem;
+      margin: 8px;
+    }
+    .best-score {
+      margin: 10px 0;
+      font-size: 0.95rem;
+      color: #333;
+    }
+    .game-board {
+      margin: 20px auto;
+      display: grid;
+      gap: 10px;
+      justify-content: center;
+    }
+    /* Cada carta mantiene una proporción 2:3 */
+    .card {
+      width: 100%;
+      position: relative;
+      aspect-ratio: 2 / 3;
+      perspective: 1000px;
+    }
+    /* Estado de la carta: 
+         - .animate-flip para la animación de vuelta (flip) solo en la carta pulsada.
+         - .flipped para las que ya están volteadas sin animación. */
+    .card-inner {
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+    }
+    .card-inner.flipped {
+      transform: rotateY(180deg);
+    }
+    .card-inner.animate-flip {
+      animation: flipCard 0.6s ease forwards;
+    }
+    @keyframes flipCard {
+      0% { transform: rotateY(0deg); }
+      100% { transform: rotateY(180deg); }
+    }
+    /* Animación de acierto: resplandor verde sin modificar el tamaño */
+    .card-inner.match {
+      animation: matchFlash 1s ease;
+    }
+    @keyframes matchFlash {
+      0% { box-shadow: 0 0 0px rgba(0,255,0,0); }
+      50% { box-shadow: 0 0 10px 5px rgba(0,255,0,0.8); }
+      100% { box-shadow: 0 0 0px rgba(0,255,0,0); }
+    }
+    /* Caras de las cartas */
+    .card-front, .card-back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-front {
+      background-color: #1e3a8a;
+      color: #fff;
+      font-size: 1rem;
+    }
+    .card-back {
+      transform: rotateY(180deg);
+      background-size: cover;
+      background-position: center;
+    }
+    /* Overlay de victoria */
+    .victory-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+      z-index: 1000;
+    }
+    .victory-overlay.show {
+      opacity: 1;
+      visibility: visible;
+    }
+    .victory-message {
+      color: #fff;
+      font-size: 2.5rem;
+      margin-bottom: 20px;
+      animation: fadeIn 1s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.8); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    /* Responsividad */
+    @media (max-width: 480px) {
+      h1 { font-size: 1.5rem; }
+      .stats { font-size: 0.9rem; }
+      button, select, label { font-size: 0.8rem; }
+      .victory-message { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Juego de Memoria</h1>
+    <div class="stats">
+      <p id="turns">Turnos: 0</p>
+      <p id="timer">Tiempo: 0s</p>
+    </div>
+    <div class="best-score" id="bestScore">Mejor Puntaje: -</div>
+    <div style="margin-bottom: 12px;">
+      <button onclick="startNewGame()">Reiniciar Juego</button>
+    </div>
+    <div style="margin-bottom: 15px;">
+      <label for="difficulty">Dificultad:</label>
+      <select id="difficulty" onchange="changeDifficulty()">
+        <option value="6">Fácil (6 pares)</option>
+        <option value="8">Medio (8 pares)</option>
+        <option value="10">Difícil (10 pares)</option>
+      </select>
+    </div>
+    <div class="game-board" id="gameBoard"></div>
+  </div>
+
+  <!-- Overlay de victoria -->
+  <div class="victory-overlay" id="victoryOverlay">
+    <div class="victory-message">¡Ganaste!</div>
+    <button onclick="closeVictory()">Jugar de nuevo</button>
+  </div>
+
+  <script>
+    let cards = [];
+    let flippedCards = [];
+    let matchedCards = [];
+    let turns = 0;
+    let timer = 0;
+    let isGameActive = false;
+    let difficulty = 6;
+    let timerInterval;
+    let timerStarted = false;
+    let lastClicked = null;
+
+    // Carga el mejor puntaje para la dificultad actual usando una clave propia
+    function loadBestScore() {
+      let key = "bestScore_" + difficulty;
+      const storedScore = localStorage.getItem(key);
+      if (storedScore) {
+        const bestScore = JSON.parse(storedScore);
+        document.getElementById("bestScore").textContent = `Mejor Puntaje: ${bestScore.turns} turnos - ${bestScore.time}s`;
+      } else {
+        document.getElementById("bestScore").textContent = `Mejor Puntaje: -`;
+      }
+    }
+
+    // Actualiza el mejor puntaje para la dificultad actual
+    function updateBestScore() {
+      let key = "bestScore_" + difficulty;
+      const storedScore = localStorage.getItem(key);
+      let currentBest = storedScore ? JSON.parse(storedScore) : { turns: null, time: null };
+      if (currentBest.turns === null || turns < currentBest.turns || (turns === currentBest.turns && timer < currentBest.time)) {
+        currentBest = { turns, time: timer };
+        localStorage.setItem(key, JSON.stringify(currentBest));
+        document.getElementById("bestScore").textContent = `Mejor Puntaje: ${currentBest.turns} turnos - ${currentBest.time}s`;
+      }
+    }
+
+    async function startNewGame() {
+      clearInterval(timerInterval);
+      timerStarted = false; // Reinicia el inicio del contador
+      lastClicked = null;
+      try {
+        const response = await fetch('https://deckofcardsapi.com/api/deck/new/draw/?count=' + difficulty);
+        if (!response.ok) throw new Error("Error en la API");
+        const data = await response.json();
+        const cardData = data.cards.map(card => ({
+          code: card.code,
+          image: card.image,
+        }));
+        // Duplicamos y mezclamos las cartas
+        cards = shuffle([...cardData, ...cardData]);
+        matchedCards = [];
+        flippedCards = [];
+        turns = 0;
+        timer = 0;
+        isGameActive = true;
+        document.getElementById('turns').textContent = `Turnos: ${turns}`;
+        document.getElementById('timer').textContent = `Tiempo: ${timer}s`;
+        loadBestScore(); // Carga el mejor puntaje para el modo actual
+        renderBoard();
+        // El timer se iniciará al tocar la primera carta
+      } catch (error) {
+        alert("No se pudo iniciar el juego: " + error.message);
+      }
+    }
+
+    function startTimer() {
+      timerStarted = true;
+      timerInterval = setInterval(() => {
+        if (isGameActive) {
+          timer++;
+          document.getElementById('timer').textContent = `Tiempo: ${timer}s`;
+        }
+      }, 1000);
+    }
+
+    function changeDifficulty() {
+      difficulty = parseInt(document.getElementById('difficulty').value);
+      startNewGame();
+    }
+
+    // Algoritmo Fisher-Yates para mezclar
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    function renderBoard() {
+      const gameBoard = document.getElementById('gameBoard');
+      gameBoard.innerHTML = '';
+      // Para 10 pares se usan 5 columnas; para 6 u 8 pares, 4 columnas.
+      let columns = difficulty === 10 ? 5 : 4;
+      gameBoard.style.gridTemplateColumns = `repeat(${columns}, minmax(60px, 80px))`;
+
+      cards.forEach((card, index) => {
+        let extraClass = "";
+        if (flippedCards.includes(index) || matchedCards.includes(index)) {
+          extraClass = (index === lastClicked) ? "animate-flip" : "flipped";
+        }
+        const cardDiv = document.createElement('div');
+        cardDiv.classList.add('card');
+        cardDiv.dataset.index = index;
+        cardDiv.innerHTML = `
+          <div class="card-inner ${extraClass}">
+            <div class="card-front">?</div>
+            <div class="card-back" style="background-image: url('${card.image}')"></div>
+          </div>`;
+        cardDiv.addEventListener('click', () => handleCardClick(index));
+        gameBoard.appendChild(cardDiv);
+      });
+    }
+
+    function handleCardClick(index) {
+      // Inicia el timer al tocar la primera carta
+      if (!timerStarted) {
+        startTimer();
+      }
+      if (flippedCards.length === 2 || flippedCards.includes(index) || matchedCards.includes(index) || !isGameActive) return;
+      lastClicked = index;
+      flippedCards.push(index);
+      renderBoard();
+
+      // Se limpia lastClicked después de la animación de vuelta (0.6s + pequeño margen)
+      setTimeout(() => {
+        lastClicked = null;
+        renderBoard();
+      }, 700);
+
+      if (flippedCards.length === 2) {
+        turns++;
+        document.getElementById('turns').textContent = `Turnos: ${turns}`;
+        const [firstIndex, secondIndex] = flippedCards;
+        
+        if (cards[firstIndex].code === cards[secondIndex].code) {
+          // Animación de acierto: se aplica la clase 'match'
+          const card1 = document.querySelector(`[data-index="${firstIndex}"] .card-inner`);
+          const card2 = document.querySelector(`[data-index="${secondIndex}"] .card-inner`);
+          if (card1) card1.classList.add('match');
+          if (card2) card2.classList.add('match');
+          matchedCards.push(...flippedCards);
+          setTimeout(() => {
+            if (card1) card1.classList.remove('match');
+            if (card2) card2.classList.remove('match');
+            flippedCards = [];
+            renderBoard();
+            if (matchedCards.length === cards.length) {
+              isGameActive = false;
+              clearInterval(timerInterval);
+              updateBestScore();
+              setTimeout(showVictory, 500);
+            }
+          }, 1000);
+        } else {
+          // En caso de fallo, se mantiene la visualización de la segunda carta por más tiempo
+          setTimeout(() => {
+            flippedCards = [];
+            renderBoard();
+          }, 1500);  // Se extiende el tiempo para ver ambas cartas sin animación de fallo
+        }
+      }
+    }
+
+    function showVictory() {
+      const overlay = document.getElementById('victoryOverlay');
+      overlay.classList.add('show');
+    }
+
+    function closeVictory() {
+      const overlay = document.getElementById('victoryOverlay');
+      overlay.classList.remove('show');
+      startNewGame();
+    }
+
+    loadBestScore();
+    window.onload = startNewGame;
+  </script>
+</body>
+</html>
